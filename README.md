@@ -4,7 +4,7 @@ Live App: https://data-question-agent.onrender.com/
 
 A small web app and FastAPI service that answers plain-English questions about an online store's database. A language model writes a SQL query, the service runs it safely, shows the model the rows or the error, lets it fix mistakes, and returns the answer together with the exact SQL and the rows behind it. The part that is built and measured here is the safety layer: what the agent is allowed to run, how long it may loop, and what it may say.
 
-Status: working and tested. On the 40 evaluation questions, `gemini-3.5-flash-lite` wrote SQL that returned the correct rows for **38 of 40 (95%)** in one run, with every dangerous query stopped by the guardrails (25 of 25). The service is not deployed yet.
+Status: working and tested. On the 40 evaluation questions, `gemini-3.5-flash-lite` wrote SQL that returned the correct rows for **38 of 40 (95%)** in one run, with every dangerous query stopped by the guardrails (25 of 25). It is deployed on Render's free tier (see the Live App link above), which sleeps when unused, so the first visit can take a minute.
 
 ## What it has
 
@@ -70,8 +70,8 @@ The plain connection is the same SQLite with no checks, run on a throwaway copy 
 - **The questions and attacks were written by one person who knew the database,** so the questions use clear wording and the attacks are the ones that person thought of. The questions were not tuned after seeing the model's answers. The numbers are for this set, not for a general attack surface.
 - **Questions that ask for changes** ("delete all orders") rely on the model choosing to refuse. If it tries the write instead, the SQL layers stop it, but this path is only tested with a scripted model.
 - The email check on answers looks for the shape of an address, so it would also withhold a made-up address that appears in a question's own text.
-- One small SQLite database with made-up data. No login, no deployment yet and no real users. The rate limit and daily budget live in one process's memory, so they reset on a restart and need a single worker.
-- **What was checked in Docker:** the image builds (277 MB), starts as a non-root user on a custom `PORT`, serves the page with its security headers, answers `/health`, `/schema` and `/ask`, and returns 429 on the 16th request in a minute. The page was viewed in a browser at desktop and phone width with a scripted stand-in model, so the page and the container have not been tried together with live Gemini answers.
+- One small SQLite database with made-up data. No login and no real users, and it runs on a free hosting tier that sleeps when unused. The rate limit and daily budget live in one process's memory, so they reset on a restart and need a single worker.
+- **What was checked in Docker:** the image builds (277 MB), starts as a non-root user on a custom `PORT`, serves the page with its security headers, answers `/health`, `/schema` and `/ask`, and returns 429 on the 16th request in a minute. On the deployed service, `/health` reports the Gemini backend and a live question ("How many customers are there?") returned the correct count with its SQL and rows. The page itself was viewed in a browser at desktop and phone width with a scripted stand-in model, not with live answers.
 
 ## Repository
 
