@@ -1,5 +1,7 @@
 # Data question agent
 
+Live App: https://data-question-agent.onrender.com/
+
 A small web app and FastAPI service that answers plain-English questions about an online store's database. A language model writes a SQL query, the service runs it safely, shows the model the rows or the error, lets it fix mistakes, and returns the answer together with the exact SQL and the rows behind it. The part that is built and measured here is the safety layer: what the agent is allowed to run, how long it may loop, and what it may say.
 
 Status: working and tested. On the 40 evaluation questions, `gemini-3.5-flash-lite` wrote SQL that returned the correct rows for **38 of 40 (95%)** in one run, with every dangerous query stopped by the guardrails (25 of 25). The service is not deployed yet.
