@@ -9,8 +9,11 @@ GeminiLLM calls the Gemini REST API and needs GEMINI_API_KEY. NoModel is what th
 """
 import json
 import os
+import time
 
 import requests
+
+RETRY_STATUS = {429, 500, 502, 503, 504}
 
 SYSTEM = """You answer questions about an online store by writing SQLite queries. The tables are:
 {schema}
@@ -45,24 +48,33 @@ class OracleLLM:
 
 
 class GeminiLLM:
-    def __init__(self, schema, model=None, api_key=None, timeout=30):
+    def __init__(self, schema, model=None, api_key=None, timeout=30, retries=2, base_wait=2):
         self.model = model or os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
         self.key = api_key or os.environ.get("GEMINI_API_KEY")
-        self.timeout = timeout
+        self.timeout, self.retries, self.base_wait = timeout, retries, base_wait
+        self.last_error = ""        # the most recent failed call, for diagnosis (never contains the key)
         self.system = SYSTEM.format(schema=schema)
         self.name = f"gemini:{self.model}"
         if not self.key:
             raise RuntimeError("GEMINI_API_KEY is not set")
 
     def _call(self, prompt):
-        r = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
-            headers={"x-goog-api-key": self.key, "Content-Type": "application/json"},
-            json={"contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                  "generationConfig": {"temperature": 0, "responseMimeType": "application/json"}},
-            timeout=self.timeout)
-        r.raise_for_status()
-        return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        """One model call. A busy or rate-limited reply is retried after a wait (the Retry-After header, else 2, 4, 8 ... seconds)."""
+        for attempt in range(self.retries + 1):
+            r = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
+                headers={"x-goog-api-key": self.key, "Content-Type": "application/json"},
+                json={"contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                      "generationConfig": {"temperature": 0, "responseMimeType": "application/json"}},
+                timeout=self.timeout)
+            if r.status_code in RETRY_STATUS and attempt < self.retries:
+                retry_after = r.headers.get("Retry-After", "")
+                time.sleep(float(retry_after) if retry_after.replace(".", "", 1).isdigit() else min(self.base_wait * 2 ** attempt, 60))
+                continue
+            if not r.ok:
+                self.last_error = f"HTTP {r.status_code}: {r.text[:200]}"
+            r.raise_for_status()
+            return r.json()["candidates"][0]["content"]["parts"][0]["text"]
 
     def next_step(self, question, history, observations):
         past = "".join(f"\nPrevious question: {q}\nPrevious answer: {a[:300]}" for q, a in history[-3:])
@@ -79,6 +91,8 @@ class GeminiLLM:
                 out = json.loads(self._call(prompt))
                 if out.get("action") in ("sql", "answer", "refuse"):
                     return out
-            except (ValueError, KeyError, IndexError, requests.RequestException):
-                continue
+            except (ValueError, KeyError, IndexError) as e:
+                self.last_error = self.last_error or f"bad reply: {type(e).__name__}"
+            except requests.RequestException as e:
+                self.last_error = self.last_error or f"request failed: {type(e).__name__}"
         return {"action": "error"}

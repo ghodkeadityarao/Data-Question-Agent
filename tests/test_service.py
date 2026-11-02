@@ -254,3 +254,118 @@ def test_service_without_a_model_refuses_politely():
                                      {"question": "ok", "session_id": "bad id!"}, {"question": 5}])
 def test_validation_errors_are_422(client, payload):
     assert client.post("/ask", json=payload).status_code == 422
+
+
+# page, limits and headers
+from app.limits import DailyBudget, RateLimiter  # noqa: E402
+
+
+def test_page_is_served_with_a_strict_csp(client):
+    r = client.get("/")
+    assert r.status_code == 200 and "Data Question Agent" in r.text
+    assert "script-src 'self'" in r.headers["content-security-policy"] and "unsafe-inline" not in r.headers["content-security-policy"]
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert client.get("/static/app.js").status_code == 200 and client.get("/static/style.css").status_code == 200
+
+
+def test_page_has_no_inline_script_or_style():
+    html = open(os.path.join(ROOT, "static", "index.html")).read()
+    assert "<script>" not in html and "<style" not in html and " style=" not in html and " onclick=" not in html
+
+
+def test_page_script_never_writes_html():
+    assert "innerHTML" not in open(os.path.join(ROOT, "static", "app.js")).read()
+
+
+def test_schema_endpoint_lists_tables_without_the_private_column(client):
+    tables = client.get("/schema").json()["tables"]
+    assert len(tables) == 4 and any(t.startswith("customers(") for t in tables) and "email" not in " ".join(tables)
+
+
+def test_rate_limiter_allows_then_blocks_then_recovers():
+    rl = RateLimiter(per_minute=3)
+    assert [rl.allow("a", now=t) for t in (0, 1, 2)] == [True] * 3
+    assert rl.allow("a", now=3) is False and rl.allow("b", now=3) is True
+    assert rl.allow("a", now=61) is True
+
+
+def test_daily_budget_resets_each_day():
+    from datetime import date
+    b = DailyBudget(limit=2)
+    assert b.take(date(2025, 1, 1)) and b.take(date(2025, 1, 1)) and not b.take(date(2025, 1, 1))
+    assert b.take(date(2025, 1, 2))
+
+
+def test_ask_returns_429_when_over_the_rate_limit():
+    agent = Agent(DB, NoModel())
+    with TestClient(create_app(agent, limiter=RateLimiter(per_minute=2))) as c:
+        codes = [c.post("/ask", json={"question": COUNT_Q}).status_code for _ in range(3)]
+    assert codes == [200, 200, 429]
+
+
+def test_ask_returns_429_when_the_daily_budget_is_used_up():
+    with TestClient(create_app(Agent(DB, NoModel()), budget=DailyBudget(limit=1))) as c:
+        assert c.post("/ask", json={"question": COUNT_Q}).status_code == 200
+        r = c.post("/ask", json={"question": COUNT_Q})
+    assert r.status_code == 429 and "budget" in r.json()["detail"]
+
+
+def test_invalid_requests_do_not_use_up_the_limits():
+    with TestClient(create_app(Agent(DB, NoModel()), limiter=RateLimiter(per_minute=1))) as c:
+        assert c.post("/ask", json={"question": ""}).status_code == 422
+        assert c.post("/ask", json={"question": COUNT_Q}).status_code == 200
+
+
+def test_forwarded_address_is_used_only_behind_a_trusted_proxy():
+    hdr = lambda ip: {"X-Forwarded-For": f"9.9.9.9, {ip}"}
+    with TestClient(create_app(Agent(DB, NoModel()), limiter=RateLimiter(per_minute=1), trust_proxy=True)) as c:
+        assert c.post("/ask", json={"question": COUNT_Q}, headers=hdr("1.1.1.1")).status_code == 200
+        assert c.post("/ask", json={"question": COUNT_Q}, headers=hdr("2.2.2.2")).status_code == 200
+        assert c.post("/ask", json={"question": COUNT_Q}, headers=hdr("1.1.1.1")).status_code == 429
+    with TestClient(create_app(Agent(DB, NoModel()), limiter=RateLimiter(per_minute=1), trust_proxy=False)) as c:
+        assert c.post("/ask", json={"question": COUNT_Q}, headers=hdr("1.1.1.1")).status_code == 200
+        assert c.post("/ask", json={"question": COUNT_Q}, headers=hdr("2.2.2.2")).status_code == 429
+
+
+# Gemini backend retries (no network: requests.post is replaced)
+import app.llm as llm_module  # noqa: E402
+
+
+class FakeReply:
+    def __init__(self, status, text="", headers=None, body=None):
+        self.status_code, self.text, self.headers, self._body = status, text, headers or {}, body
+
+    @property
+    def ok(self):
+        return self.status_code < 400
+
+    def raise_for_status(self):
+        if not self.ok:
+            raise llm_module.requests.HTTPError(f"{self.status_code}")
+
+    def json(self):
+        return {"candidates": [{"content": {"parts": [{"text": self._body}]}}]}
+
+
+def gemini(monkeypatch, replies, **kw):
+    waits = []
+    monkeypatch.setattr(llm_module.time, "sleep", waits.append)
+    monkeypatch.setattr(llm_module.requests, "post", lambda *a, **k: replies.pop(0))
+    return llm_module.GeminiLLM("orders(id INTEGER)", api_key="test", **kw), waits
+
+
+def test_gemini_retries_a_rate_limit_then_succeeds(monkeypatch):
+    ok = FakeReply(200, body='{"action": "sql", "query": "SELECT 1"}')
+    llm, waits = gemini(monkeypatch, [FakeReply(429, headers={"Retry-After": "7"}), FakeReply(503), ok], base_wait=2)
+    assert llm.next_step("q", [], []) == {"action": "sql", "query": "SELECT 1"} and waits == [7.0, 4]
+
+
+def test_gemini_gives_up_after_the_retries_and_keeps_the_reason(monkeypatch):
+    llm, waits = gemini(monkeypatch, [FakeReply(429, text="quota exceeded")] * 9, retries=2)
+    assert llm.next_step("q", [], []) == {"action": "error"}
+    assert "429" in llm.last_error and "quota exceeded" in llm.last_error and "test" not in llm.last_error.replace("quota", "")
+
+
+def test_gemini_does_not_retry_a_bad_key(monkeypatch):
+    llm, waits = gemini(monkeypatch, [FakeReply(403, text="bad key")] * 4)
+    assert llm.next_step("q", [], []) == {"action": "error"} and waits == [] and "403" in llm.last_error

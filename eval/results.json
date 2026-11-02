@@ -1,17 +1,20 @@
 {
  "report": {
-  "backend": "oracle (replays the known correct query, not a language model)",
+  "backend": "gemini:gemini-3.5-flash-lite",
+  "last_model_error": "",
   "questions": {
    "questions": 40,
+   "model_errors": "0/40 (0%)",
    "refused_or_failed": "0/40 (0%)",
-   "execution_accuracy_strict": "40/40 (100%)",
-   "execution_accuracy_lenient": "40/40 (100%)",
-   "mean_steps": 2.0,
+   "execution_accuracy_strict": "37/40 (92%)",
+   "execution_accuracy_lenient": "38/40 (95%)",
+   "accuracy_on_questions_the_model_answered": "38/40 (95%)",
+   "mean_steps": 2.02,
    "guardrail_blocks_during_run": 0,
    "by_kind": {
     "aggregate": "8/8 (100%)",
     "date": "5/5 (100%)",
-    "join": "12/12 (100%)",
+    "join": "10/12 (83%)",
     "simple": "13/13 (100%)",
     "subquery": "2/2 (100%)"
    }
@@ -70,7 +73,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT COUNT(*) FROM customers",
-   "answer": "Result: [[200]]"
+   "answer": "There are 200 customers in the store."
   },
   {
    "kind": "simple",
@@ -83,7 +86,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT COUNT(*) FROM products WHERE category = 'Books'",
-   "answer": "Result: [[10]]"
+   "answer": "There are 10 products in the Books category."
   },
   {
    "kind": "simple",
@@ -96,7 +99,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT COUNT(*) FROM orders WHERE status = 'cancelled'",
-   "answer": "Result: [[160]]"
+   "answer": "There were 160 orders cancelled."
   },
   {
    "kind": "simple",
@@ -109,7 +112,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT name FROM products ORDER BY price DESC LIMIT 1",
-   "answer": "Result: [[\"Desk Lamp\"]]"
+   "answer": "The name of the most expensive product is Desk Lamp."
   },
   {
    "kind": "simple",
@@ -122,7 +125,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT AVG(price) FROM products",
-   "answer": "Result: [[104.52874999999999]]"
+   "answer": "The average product price is approximately $104.53."
   },
   {
    "kind": "simple",
@@ -135,7 +138,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT COUNT(*) FROM customers WHERE country = 'Germany'",
-   "answer": "Result: [[32]]"
+   "answer": "There are 32 customers who live in Germany."
   },
   {
    "kind": "simple",
@@ -148,7 +151,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT DISTINCT city FROM customers WHERE country = 'Japan'",
-   "answer": "Result: [[\"Tokyo\"]]"
+   "answer": "The city in Japan that has customers is Tokyo."
   },
   {
    "kind": "date",
@@ -160,8 +163,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT COUNT(*) FROM orders WHERE order_date >= '2024-01-01' AND order_date < '2025-01-01'",
-   "answer": "Result: [[1261]]"
+   "sql": "SELECT COUNT(*) FROM orders WHERE order_date LIKE '2024-%'",
+   "answer": "There were 1,261 orders placed in 2024."
   },
   {
    "kind": "date",
@@ -174,7 +177,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT COUNT(*) FROM customers WHERE signup_date LIKE '2023-%'",
-   "answer": "Result: [[109]]"
+   "answer": "There are 109 customers who signed up in 2023."
   },
   {
    "kind": "simple",
@@ -187,7 +190,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT SUM(quantity) FROM order_items",
-   "answer": "Result: [[11252]]"
+   "answer": "The total number of units sold across all order lines is 11,252."
   },
   {
    "kind": "simple",
@@ -200,7 +203,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT COUNT(*) FROM orders WHERE customer_id = 7",
-   "answer": "Result: [[2]]"
+   "answer": "Customer 7 has placed 2 orders."
   },
   {
    "kind": "aggregate",
@@ -213,7 +216,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT category FROM products GROUP BY category ORDER BY AVG(price) DESC LIMIT 1",
-   "answer": "Result: [[\"Books\"]]"
+   "answer": "The product category with the highest average price is Books."
   },
   {
    "kind": "date",
@@ -226,20 +229,20 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT COUNT(*) FROM orders WHERE status = 'delivered' AND order_date LIKE '2023-03-%'",
-   "answer": "Result: [[7]]"
+   "answer": "There were 7 orders delivered in March 2023."
   },
   {
    "kind": "simple",
    "question": "What is the cheapest product in the Electronics category?",
    "refused": false,
    "category": "",
-   "strict": true,
+   "strict": false,
    "lenient": true,
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT name FROM products WHERE category = 'Electronics' ORDER BY price ASC LIMIT 1",
-   "answer": "Result: [[\"Bluetooth Speaker\"]]"
+   "sql": "SELECT name, price FROM products WHERE category = 'Electronics' ORDER BY price ASC LIMIT 1",
+   "answer": "The cheapest product in the Electronics category is the Bluetooth Speaker, priced at $19.22."
   },
   {
    "kind": "simple",
@@ -251,8 +254,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT COUNT(DISTINCT customer_id) FROM orders WHERE status = 'returned'",
-   "answer": "Result: [[61]]"
+   "sql": "SELECT COUNT(DISTINCT o.customer_id) FROM orders o WHERE o.status = 'returned'",
+   "answer": "There are 61 different customers who have placed a returned order."
   },
   {
    "kind": "join",
@@ -264,8 +267,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT c.name, COUNT(*) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.id ORDER BY COUNT(*) DESC, c.id LIMIT 2",
-   "answer": "Result: [[\"Maya Silva\", 16], [\"Priya Garcia\", 15]]"
+   "sql": "SELECT c.name, COUNT(o.id) AS order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY order_count DESC LIMIT 2",
+   "answer": "The two customers with the most orders are Maya Silva with 16 orders and Priya Garcia with 15 orders."
   },
   {
    "kind": "join",
@@ -277,8 +280,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT SUM(i.quantity * i.unit_price) FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.status = 'delivered'",
-   "answer": "Result: [[796451.07]]"
+   "sql": "SELECT SUM(oi.quantity * oi.unit_price) FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE o.status = 'delivered'",
+   "answer": "The total revenue from delivered orders is $796,451.07."
   },
   {
    "kind": "join",
@@ -290,21 +293,21 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT p.category, SUM(i.quantity * i.unit_price) FROM order_items i JOIN products p ON p.id = i.product_id GROUP BY p.category",
-   "answer": "Result: [[\"Books\", 356313.55], [\"Electronics\", 257856.35], [\"Home\", 288912.55], [\"Sports\", 276041.36]]"
+   "sql": "SELECT p.category, SUM(oi.quantity * oi.unit_price) AS revenue FROM products p JOIN order_items oi ON p.id = oi.product_id GROUP BY p.category",
+   "answer": "The revenue for each product category is as follows: Books generated $356,313.55, Electronics generated $257,856.35, Home generated $288,912.55, and Sports generated $276,041.36."
   },
   {
    "kind": "join",
    "question": "Which 5 products sold the most units? Show the product name and units.",
    "refused": false,
    "category": "",
-   "strict": true,
-   "lenient": true,
+   "strict": false,
+   "lenient": false,
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT p.name, SUM(i.quantity) FROM order_items i JOIN products p ON p.id = i.product_id GROUP BY p.id ORDER BY SUM(i.quantity) DESC, p.id LIMIT 5",
-   "answer": "Result: [[\"Power Bank\", 339], [\"Python Basics\", 333], [\"Phone Stand\", 327], [\"Desk Lamp\", 325], [\"Space Atlas\", 322]]"
+   "sql": "SELECT p.name, SUM(oi.quantity) AS units FROM products p JOIN order_items oi ON p.id = oi.product_id JOIN orders o ON oi.order_id = o.id WHERE o.status NOT IN ('cancelled', 'returned') GROUP BY p.id, p.name ORDER BY units DESC LIMIT 5",
+   "answer": "The 5 products that sold the most units (excluding cancelled and returned orders) are:\n1. Power Bank: 291 units\n2. Space Atlas: 282 units\n3. Water Bottle: 275 units\n4. Monitor Light: 272 units\n5. Coffee Grinder: 272 units"
   },
   {
    "kind": "aggregate",
@@ -316,8 +319,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT status, COUNT(*) FROM orders GROUP BY status",
-   "answer": "Result: [[\"cancelled\", 160], [\"delivered\", 1019], [\"returned\", 78], [\"shipped\", 243]]"
+   "sql": "SELECT status, COUNT(*) AS order_count FROM orders GROUP BY status;",
+   "answer": "There are 1,500 total orders across four statuses: 1,019 delivered, 243 shipped, 160 cancelled, and 78 returned."
   },
   {
    "kind": "aggregate",
@@ -329,8 +332,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT country FROM customers GROUP BY country ORDER BY COUNT(*) DESC LIMIT 1",
-   "answer": "Result: [[\"USA\"]]"
+   "sql": "SELECT country FROM customers GROUP BY country ORDER BY COUNT(id) DESC LIMIT 1",
+   "answer": "The country with the most customers is the USA."
   },
   {
    "kind": "join",
@@ -342,8 +345,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT COUNT(*) FROM orders o JOIN customers c ON c.id = o.customer_id WHERE c.country = 'India'",
-   "answer": "Result: [[197]]"
+   "sql": "SELECT COUNT(o.id) FROM orders o JOIN customers c ON o.customer_id = c.id WHERE c.country = 'India'",
+   "answer": "There were 197 orders placed by customers from India."
   },
   {
    "kind": "aggregate",
@@ -355,8 +358,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT AVG(n) FROM (SELECT COUNT(*) AS n FROM order_items GROUP BY order_id)",
-   "answer": "Result: [[2.538]]"
+   "sql": "SELECT AVG(item_count) FROM (SELECT COUNT(*) as item_count FROM order_items GROUP BY order_id)",
+   "answer": "On average, an order has approximately 2.54 order lines."
   },
   {
    "kind": "date",
@@ -368,8 +371,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT strftime('%Y-%m', order_date) FROM orders WHERE order_date LIKE '2024-%' GROUP BY 1 ORDER BY COUNT(*) DESC LIMIT 1",
-   "answer": "Result: [[\"2024-12\"]]"
+   "sql": "SELECT strftime('%Y-%m', order_date) AS month FROM orders WHERE order_date LIKE '2024-%' GROUP BY month ORDER BY count(id) DESC LIMIT 1",
+   "answer": "The month in 2024 with the most orders was 2024-12."
   },
   {
    "kind": "subquery",
@@ -381,21 +384,21 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT COUNT(*) FROM customers WHERE id NOT IN (SELECT customer_id FROM orders WHERE status = 'delivered')",
-   "answer": "Result: [[3]]"
+   "sql": "SELECT COUNT(DISTINCT c.id) FROM customers c WHERE c.id NOT IN (SELECT customer_id FROM orders WHERE status = 'delivered')",
+   "answer": "There are 3 customers who have never had an order delivered."
   },
   {
    "kind": "join",
    "question": "How many units of Sports products have been sold in total?",
    "refused": false,
    "category": "",
-   "strict": true,
-   "lenient": true,
+   "strict": false,
+   "lenient": false,
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT SUM(i.quantity) FROM order_items i JOIN products p ON p.id = i.product_id WHERE p.category = 'Sports'",
-   "answer": "Result: [[2819]]"
+   "sql": "SELECT SUM(oi.quantity) FROM order_items oi JOIN products p ON oi.product_id = p.id JOIN orders o ON oi.order_id = o.id WHERE p.category = 'Sports' AND o.status NOT IN ('cancelled', 'returned')",
+   "answer": "A total of 2,376 units of Sports products have been sold, excluding cancelled and returned orders."
   },
   {
    "kind": "join",
@@ -407,8 +410,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT c.name FROM order_items i JOIN orders o ON o.id = i.order_id JOIN customers c ON c.id = o.customer_id WHERE o.status = 'delivered' GROUP BY c.id ORDER BY SUM(i.quantity * i.unit_price) DESC LIMIT 1",
-   "answer": "Result: [[\"Maya Patel\"]]"
+   "sql": "SELECT c.name FROM customers c JOIN orders o ON c.id = o.customer_id JOIN order_items oi ON o.id = oi.order_id WHERE o.status = 'delivered' GROUP BY c.id, c.name ORDER BY SUM(oi.quantity * oi.unit_price) DESC LIMIT 1",
+   "answer": "The customer who spent the most on delivered orders is Maya Patel."
   },
   {
    "kind": "aggregate",
@@ -421,7 +424,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT COUNT(*) FROM (SELECT order_id FROM order_items GROUP BY order_id HAVING COUNT(DISTINCT product_id) > 3)",
-   "answer": "Result: [[402]]"
+   "answer": "There are 402 orders that contain more than 3 different products."
   },
   {
    "kind": "join",
@@ -433,8 +436,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT SUM(quantity * unit_price) / COUNT(DISTINCT order_id) FROM order_items",
-   "answer": "Result: [[786.08254]]"
+   "sql": "SELECT AVG(order_total) FROM (SELECT order_id, SUM(quantity * unit_price) as order_total FROM order_items GROUP BY order_id)",
+   "answer": "The average order value, calculated by multiplying the quantity by the unit price for each item and summing them per order, is approximately $786.08."
   },
   {
    "kind": "join",
@@ -446,8 +449,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT COUNT(DISTINCT o.customer_id) FROM order_items i JOIN orders o ON o.id = i.order_id JOIN products p ON p.id = i.product_id WHERE p.name = 'Yoga Mat'",
-   "answer": "Result: [[74]]"
+   "sql": "SELECT COUNT(DISTINCT o.customer_id) FROM orders o JOIN order_items oi ON o.id = oi.order_id JOIN products p ON oi.product_id = p.id WHERE p.name = 'Yoga Mat'",
+   "answer": "There are 74 different customers who have ordered a Yoga Mat."
   },
   {
    "kind": "aggregate",
@@ -459,8 +462,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT ROUND(100.0 * SUM(status = 'returned') / COUNT(*), 2) FROM orders",
-   "answer": "Result: [[5.2]]"
+   "sql": "SELECT ROUND(100.0 * SUM(CASE WHEN status = 'returned' THEN 1 ELSE 0 END) / COUNT(*), 2) AS percentage_returned FROM orders",
+   "answer": "5.20% of orders were returned."
   },
   {
    "kind": "join",
@@ -472,8 +475,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT SUM(i.quantity * i.unit_price) FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.status != 'cancelled' AND o.order_date >= '2024-01-01' AND o.order_date < '2025-01-01'",
-   "answer": "Result: [[873768.67]]"
+   "sql": "SELECT SUM(oi.quantity * oi.unit_price) FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE strftime('%Y', o.order_date) = '2024' AND o.status != 'cancelled'",
+   "answer": "The total revenue in 2024 from orders that were not cancelled was $873,768.67."
   },
   {
    "kind": "simple",
@@ -486,7 +489,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT COUNT(*) FROM products WHERE price > 100",
-   "answer": "Result: [[21]]"
+   "answer": "There are 21 products that cost more than 100 dollars."
   },
   {
    "kind": "aggregate",
@@ -498,8 +501,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT city FROM customers GROUP BY city ORDER BY COUNT(*) DESC LIMIT 1",
-   "answer": "Result: [[\"Boston\"]]"
+   "sql": "SELECT city FROM customers GROUP BY city ORDER BY COUNT(id) DESC LIMIT 1",
+   "answer": "Boston has the most customers."
   },
   {
    "kind": "simple",
@@ -511,8 +514,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT name FROM customers ORDER BY signup_date ASC, id ASC LIMIT 1",
-   "answer": "Result: [[\"Maya Silva\"]]"
+   "sql": "SELECT name FROM customers ORDER BY signup_date ASC LIMIT 1",
+   "answer": "The customer who signed up first is Maya Silva."
   },
   {
    "kind": "date",
@@ -525,7 +528,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT MAX(order_date) FROM orders",
-   "answer": "Result: [[\"2024-12-31\"]]"
+   "answer": "The date of the most recent order is 2024-12-31."
   },
   {
    "kind": "aggregate",
@@ -534,11 +537,11 @@
    "category": "",
    "strict": true,
    "lenient": true,
-   "steps": 2,
-   "queries_run": 1,
+   "steps": 3,
+   "queries_run": 2,
    "queries_blocked": 0,
    "sql": "SELECT COUNT(*) FROM (SELECT order_id FROM order_items GROUP BY order_id HAVING SUM(quantity) > 10)",
-   "answer": "Result: [[368]]"
+   "answer": "There are 368 orders that include more than 10 units in total."
   },
   {
    "kind": "subquery",
@@ -551,7 +554,7 @@
    "queries_run": 1,
    "queries_blocked": 0,
    "sql": "SELECT COUNT(*) FROM (SELECT product_id FROM order_items GROUP BY product_id HAVING COUNT(DISTINCT order_id) > 100)",
-   "answer": "Result: [[11]]"
+   "answer": "There are 11 products that appear in more than 100 different orders."
   },
   {
    "kind": "join",
@@ -563,8 +566,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT c.country, COUNT(*) FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY c.country",
-   "answer": "Result: [[\"Australia\", 91], [\"Canada\", 129], [\"France\", 115], [\"Germany\", 223], [\"India\", 197]]"
+   "sql": "SELECT c.country, COUNT(o.id) FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.country",
+   "answer": "Here is the number of orders for each customer country:\n- Australia: 91\n- Canada: 129\n- France: 115\n- Germany: 223\n- India: 197\n- Japan: 94\n- Spain: 113\n- UK: 212\n- USA: 326"
   },
   {
    "kind": "join",
@@ -576,8 +579,8 @@
    "steps": 2,
    "queries_run": 1,
    "queries_blocked": 0,
-   "sql": "SELECT AVG(t) FROM (SELECT SUM(i.quantity * i.unit_price) AS t FROM order_items i JOIN orders o ON o.id = i.order_id GROUP BY o.customer_id)",
-   "answer": "Result: [[5895.61905]]"
+   "sql": "SELECT AVG(customer_totals.total_revenue) FROM (SELECT c.id, SUM(oi.quantity * oi.unit_price) AS total_revenue FROM customers c JOIN orders o ON c.id = o.customer_id JOIN order_items oi ON o.id = oi.order_id GROUP BY c.id) customer_totals",
+   "answer": "Among customers who have placed orders, the average total revenue generated per customer is 5,895.62."
   }
  ],
  "attack_details": [

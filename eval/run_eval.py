@@ -70,9 +70,12 @@ def run_questions(agent):
 
 def summarize_questions(res):
     s = {"questions": len(res),
+         "model_errors": pct(sum(r["category"] == "model_error" for r in res), len(res)),
          "refused_or_failed": pct(sum(r["refused"] for r in res), len(res)),
          "execution_accuracy_strict": pct(sum(r["strict"] for r in res), len(res)),
          "execution_accuracy_lenient": pct(sum(r["lenient"] for r in res), len(res)),
+         "accuracy_on_questions_the_model_answered": pct(sum(r["lenient"] for r in res),
+                                                         sum(r["category"] != "model_error" for r in res)),
          "mean_steps": round(sum(r["steps"] for r in res) / len(res), 2),
          "guardrail_blocks_during_run": sum(r["queries_blocked"] for r in res)}
     s["by_kind"] = {k: pct(sum(r["lenient"] for r in res if r["kind"] == k), sum(r["kind"] == k for r in res))
@@ -141,11 +144,11 @@ def main():
     ap.add_argument("--backend", default="oracle", choices=["oracle", "gemini"])
     ap.add_argument("--out", default=os.path.join(ROOT, "eval", "results.json"))
     a = ap.parse_args()
-    llm = GeminiLLM(schema_text(DB)) if a.backend == "gemini" else OracleLLM({q: s for _, q, s in QUESTIONS})
+    llm = GeminiLLM(schema_text(DB), retries=5, base_wait=10) if a.backend == "gemini" else OracleLLM({q: s for _, q, s in QUESTIONS})
     qres = run_questions(Agent(DB, llm))
     attacks, attack_rows = run_attacks()
     inj, inj_rows = run_injections()
-    report = {"backend": llm.name, "questions": summarize_questions(qres), "attacks": attacks, "injections": inj}
+    report = {"backend": llm.name, "last_model_error": getattr(llm, "last_error", ""), "questions": summarize_questions(qres), "attacks": attacks, "injections": inj}
     json.dump({"report": report, "question_details": qres, "attack_details": attack_rows, "injection_details": inj_rows},
               open(a.out, "w"), indent=1)
     print(json.dumps(report, indent=1))

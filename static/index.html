@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Question Agent</title>
+<meta name="description" content="Ask questions about an online store's data in plain English and see the SQL that answers them.">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <h1>Data Question Agent</h1>
+    <p>Ask about a made-up online store in plain English. The agent writes the SQL, runs it read-only, and shows you the query and the rows.</p>
+  </div>
+</header>
+<main class="wrap layout">
+  <section class="chat" aria-label="Conversation">
+    <div id="log" class="log" aria-live="polite">
+      <div class="hint" id="hint">Try one of these:</div>
+      <div class="chips" id="chips"></div>
+    </div>
+    <form id="form" class="composer" autocomplete="off">
+      <label for="q" class="sr">Your question</label>
+      <input id="q" name="q" type="text" maxlength="500" placeholder="Ask about customers, products or orders" required>
+      <button id="send" type="submit">Ask</button>
+      <button id="reset" type="button" class="ghost">New chat</button>
+    </form>
+    <p class="note">Answers come from a language model and can be wrong, so check the SQL. Customer emails are private and cannot be read.</p>
+  </section>
+  <aside class="side" aria-label="Database tables">
+    <h2>The database</h2>
+    <p class="small">Four tables, made-up data for 2023 and 2024.</p>
+    <ul id="tables" class="tables"></ul>
+  </aside>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
