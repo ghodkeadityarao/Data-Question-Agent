@@ -1,4 +1,4 @@
-# Data question agent
+# Data Question Agent
 
 Live App: https://data-question-agent.onrender.com/
 
