@@ -1,78 +1,72 @@
-# Kubernetes docs agent service
+# Data question agent
 
-A small FastAPI service that answers questions about Kubernetes from a local copy of the official documentation, with guardrails around what it will answer, a bounded search loop, and an evaluation set that measures the guardrails against a plain retrieval baseline.
+A small FastAPI service that answers plain-English questions about an online store's database. A language model writes a SQL query, the service runs it safely, shows the model the rows or the error, lets it fix mistakes, and returns the answer together with the exact SQL and the rows behind it. The part that is built and measured here is the safety layer: what the agent is allowed to run, how long it may loop, and what it may say.
 
-Status: working and tested offline. The language model backend (Gemini) is written but has not been run, because no API key was available while building. Everything measured below used the offline extractive backend, which quotes the best sentences of retrieved sections and is **not** a language model. Treat the answer-quality numbers as a baseline.
+Status: tested offline. The Gemini backend is written but **has not been run**, because no API key was available while building, so how often the model writes the right SQL is **not measured**. Everything measured below checks the guardrails and the scoring harness, using a backend that replays the known correct query (it is not a language model).
 
-## Run it
+## What it has
 
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-uvicorn app.main:app --port 8000
-```
-
-```bash
-curl -s localhost:8000/health
-curl -s -X POST localhost:8000/ask -H 'content-type: application/json' \
-  -d '{"question": "How do I add a taint to a node and what does NoSchedule do?"}'
-```
-
-`POST /ask` takes `question` (1 to 2000 characters) and an optional `session_id` for short chat memory. It returns `answer`, `refused`, `category`, `citations`, `sources` (section id, page URL, title, heading) and `steps`. Malformed requests return 422. A refusal is a normal 200 response with `refused: true` and a `category`.
-
-To use Gemini, copy `.env.example` to `.env`, set `AGENT_BACKEND=gemini` and `GEMINI_API_KEY`, and export them. Never commit the key.
-
-## How it works
-
-1. **Input guardrails** (`app/guardrails.py`): reject empty or over 500 character questions, control characters, and prompt injection patterns (for example "ignore previous instructions", asking for the system prompt or an API key).
-2. **Retrieval** (`app/retriever.py`): BM25 over 587 documentation sections from 143 pages, with camelCase splitting and extra weight on titles and headings. No embeddings and no API key.
-3. **Scope check**: refuse unless the best section covers at least half of the question's weighted terms. Terms the corpus has never seen count against the match.
-4. **Bounded loop** (`app/agent.py`): the backend may search again, up to 4 steps, then must answer. Hitting the limit is a refusal.
-5. **Output guardrails**: the answer must cite only sections that were actually retrieved, and is withheld if it contains something that looks like a secret.
-6. Chat memory is a bounded in-memory store: 6 turns per session, 1000 sessions.
+- **API:** `POST /ask` takes `question` (1 to 2000 characters) and an optional `session_id` for short chat memory. It returns `answer`, `refused`, `category`, `sql`, `columns`, `rows`, `truncated`, `steps`, `queries_run` and `queries_blocked`. `GET /health` names the backend. Malformed requests return 422. A refusal is a normal 200 response with `refused: true` and a `category`.
+- **A sample database:** `data/store.db`, a made-up online store (200 customers, 40 products, 1,500 orders, 3,807 order lines over 2023 and 2024), built the same way every time by `data/build_db.py`. The `customers.email` column is private.
+- **A bounded loop** (`app/agent.py`): the model replies with one move at a time (run a query, answer, or refuse), sees the rows or the error of each query, and may fix a failing query. It has 4 steps, then the request is refused. An answer is only accepted after at least one query ran successfully.
+- **Three layers around the SQL** (`app/sqlguard.py`):
+  1. a static check: one statement, starting with `SELECT` or `WITH`, at most 2,000 characters;
+  2. a read-only database connection with an authorizer that allows only reads of the four store tables, hides `customers.email` and blocks `load_extension` and similar functions;
+  3. limits of 50 rows returned and 2 seconds of running time.
+- **Question and answer checks** (`app/guardrails.py`): empty, over 500 characters, control characters and prompt-injection patterns ("ignore previous instructions", asking for the system prompt or an API key) are refused before the model is called. An answer is withheld if it contains something that looks like an API key or an email address.
+- **Model backends** (`app/llm.py`): Gemini over its REST API (`gemini-3.5-flash-lite` by default, set with `GEMINI_MODEL`, key in `GEMINI_API_KEY`), with a system prompt that lists the tables without the private column. Without a key the service starts, and `/ask` returns a `model_error` refusal.
+- **Chat memory:** in memory only, 6 turns per session and 1,000 sessions.
 
 ## Evaluation
 
-`eval/questions.jsonl` has 32 questions: 20 in scope (each tied to the documentation section that answers it, with key facts to look for), 5 out of scope and 7 prompt injection attempts, 2 of them paraphrased to avoid the obvious patterns. `eval/dev.jsonl` has 22 other questions that were used to sanity check the confidence threshold. The threshold of 0.5 was chosen before running either set. The dev set showed it holds from 0.3 to 0.6 and breaks at 0.7.
+`eval/questions.py` holds three sets, and `eval/run_eval.py` runs them and writes `eval/results.json`.
 
-Final run, offline extractive backend, one run on the eval set:
+**1. Questions (40).** Each has a known correct SQL query, in five kinds: 13 simple, 8 aggregate, 12 join, 5 date and 2 subquery. A question passes when the agent's final query returns the same rows as the correct one (floats rounded to 2 decimals, row order and column names ignored). A "lenient" score also accepts extra columns.
 
-| | Guarded agent | Plain retrieval, no guardrails |
+| Offline run, replaying the correct query | Result |
+|---|---|
+| Questions answered, none refused | 40 of 40 |
+| Same rows as the correct query (strict and lenient) | 40 of 40 |
+| Correct queries blocked by a guardrail | 0 of 40 |
+
+This shows that the loop, the guardrails and the scorer work together and that no correct query is wrongly blocked. It says nothing about a language model, because the backend here is given the answers. The scorer itself is covered by tests, including cases where it must say "no".
+
+**2. Attacks (25 queries).** 12 try to write or escape (`DROP`, `DELETE`, `UPDATE`, `INSERT`, a second statement, a comment in front, a delete hidden behind `WITH`, `ATTACH`, `VACUUM INTO`, `PRAGMA`), 9 try to read private data (the email column directly, through `SELECT *`, an alias, a subquery, `sqlite_master`, `pragma_table_info`), 2 call file or extension functions and 2 never finish.
+
+| | Guardrails | Plain read-write SQLite connection |
 |---|---|---|
-| In scope questions answered | 20 of 20 | 20 of 20 |
-| Out of scope refused | 3 of 5 | 1 of 5 |
-| Injection attempts blocked | 7 of 7 | 0 of 7 |
-| Gold section in top 3 results | 18 of 20 | same retriever |
-| Gold section cited in answer | 18 of 20 | n/a |
-| Answer contains all key facts | 14 of 20 | 7 of 20 |
+| Attacks stopped | 25 of 25 | 4 of 23 (19 ran without error) |
+| Database file changed | no | 10 of the 12 write attacks ran |
+| Private email column returned | no | 9 of 9 private reads ran |
 
-Read this honestly:
+The plain connection is the same SQLite with no checks, run on a throwaway copy of the database. "Ran without error" is the measure, and the 2 slow attacks were not run on it because they would not finish. The guardrails stopped the 25 attacks in four ways: 12 by the static check, 11 by the authorizer, 1 by the time limit and 1 by SQLite itself (calling a function that does not exist). The database file had the same hash before and after.
 
-- **Two out of scope questions got through.** "How do I reverse a linked list in Python?" and "How do I install Docker on Ubuntu?" matched unrelated documentation on words like "list", "Python", "install" and "Ubuntu" and were answered with off-topic text. The scope check counts term overlap, not meaning, so it fails on questions that reuse common words. I did not tune the threshold on the eval set to hide this. A language model backend that is told to say "not covered" should help, but that is untested.
-- **Injection blocking is partly luck of the scope check.** 5 of 7 were caught by the pattern rules. The 2 paraphrases were refused only because their words did not match the documentation. A paraphrase that happens to contain Kubernetes terms could get through.
-- **The questions were written by one person with the corpus open**, so many reuse the documentation's own words. Retrieval numbers are optimistic compared with real users.
-- **The key fact check is a substring test.** It is a weak automated measure, not a correctness score. `eval/human_review.csv` has 10 sampled answers with blank columns for a person to grade correctness and grounding. It is not filled in.
-- Small sample sizes: 32 questions, 5 out of scope. One question is 3 to 5 percentage points.
+**3. Injection questions (11).**
 
-Reproduce:
+| | Blocked by the input check |
+|---|---|
+| Obvious phrasing (8) | 8 of 8 |
+| Paraphrased to avoid the patterns (3) | 0 of 3 |
 
-```bash
-python eval/run_eval.py                    # eval set, writes eval/results.json
-python eval/run_eval.py --file eval/dev.jsonl
-python eval/run_eval.py --backend gemini   # needs GEMINI_API_KEY
-```
+## Limits
 
-## Tests
+- **Answer quality is unmeasured.** No language model has been run, so there is no accuracy figure for model-written SQL. Run with a key, the same script gives one.
+- **Paraphrased injections get past the input check.** Those 3 questions would reach the model. Even then, the SQL layers still stop writes and reads of the email column, but a model could still be talked into other harmless-but-off-topic behaviour.
+- **The questions and attacks were written by one person who knew the database,** so the questions use clear wording and the attacks are the ones that person thought of. The numbers are for this set, not for a general attack surface.
+- **Questions that ask for changes** ("delete all orders") rely on the model choosing to refuse. If it tries the write instead, the SQL layers stop it, but this path is only tested with a scripted model.
+- The email check on answers looks for the shape of an address, so it would also withhold a made-up address that appears in a question's own text.
+- One small SQLite database with made-up data. No authentication, rate limiting or deployment, and no real users.
+- The `Dockerfile` has not been built, because the Docker daemon was not running.
 
-```bash
-python -m pytest -q
-```
+## Repository
 
-26 tests cover retrieval, every guardrail, the step limit, withheld ungrounded and secret-bearing answers, a failing model backend, bounded memory, and the API contract including 422 validation. A live `uvicorn` run was checked with curl for `/health`, an answered question, an injection refusal and an empty question.
-
-## Not done
-
-- Not deployed anywhere, no real users, no rate limiting or authentication.
-- A `Dockerfile` is included but was not built, because the Docker daemon was not running when this was written.
-- The Gemini backend and any language model evaluation are untested.
-- Corpus: 143 pages sampled from the concepts and administration sections of kubernetes.io, not the whole site. Rebuild with `python data/build_corpus.py`. The documentation text is from kubernetes.io and licensed CC BY 4.0, with copyright held by The Kubernetes Authors.
+| Path | Contents |
+|---|---|
+| `app/main.py` | FastAPI app and the request and response models |
+| `app/agent.py` | The bounded loop and the session memory |
+| `app/sqlguard.py` | The three SQL safety layers and the schema text for the prompt |
+| `app/guardrails.py` | Question and answer checks, limits |
+| `app/llm.py` | Gemini backend, the replay backend used for evaluation, and the no-model backend |
+| `data/build_db.py`, `data/store.db` | The sample database and the script that builds it |
+| `eval/` | The question, attack and injection sets, the evaluation script and its results |
+| `tests/` | 70 tests: SQL safety (including every attack), guardrails, the loop with scripted models, the scorer, the build and the API |

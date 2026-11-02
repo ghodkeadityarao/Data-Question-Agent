@@ -6,37 +6,33 @@ from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 from .agent import Agent
-from .llm import ExtractiveBaseline, GeminiLLM
-from .retriever import Retriever
+from .llm import GeminiLLM, NoModel
+from .sqlguard import schema_text
 
-CORPUS = os.environ.get("CORPUS_PATH", os.path.join(os.path.dirname(__file__), "..", "data", "sections.json"))
+DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "store.db"))
 
 
 class AskRequest(BaseModel):
-    question: str = Field(min_length=1, max_length=2000, description="A question about Kubernetes.")
+    question: str = Field(min_length=1, max_length=2000, description="A question about the store data.")
     session_id: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
-
-
-class Source(BaseModel):
-    id: str
-    url: str
-    title: str
-    heading: str
 
 
 class AskResponse(BaseModel):
     answer: str
     refused: bool
     category: str = ""
-    citations: list[str] = []
-    sources: list[Source] = []
+    sql: str = ""
+    columns: list[str] = []
+    rows: list[list] = []
+    truncated: bool = False
     steps: int = 0
+    queries_run: int = 0
+    queries_blocked: int = 0
 
 
 def build_agent():
-    backend = os.environ.get("AGENT_BACKEND", "extractive")
-    llm = GeminiLLM() if backend == "gemini" else ExtractiveBaseline()
-    return Agent(Retriever.from_file(CORPUS), llm)
+    llm = GeminiLLM(schema_text(DB_PATH)) if os.environ.get("GEMINI_API_KEY") else NoModel()
+    return Agent(DB_PATH, llm)
 
 
 def create_app(agent=None):
@@ -45,18 +41,18 @@ def create_app(agent=None):
         app.state.agent = agent or build_agent()
         yield
 
-    app = FastAPI(title="Kubernetes docs agent", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Data question agent", version="0.1.0", lifespan=lifespan)
 
     @app.get("/health")
     def health():
-        a = app.state.agent
-        return {"status": "ok", "backend": a.llm.name, "sections": len(a.retriever.sections)}
+        return {"status": "ok", "backend": app.state.agent.llm.name}
 
     @app.post("/ask", response_model=AskResponse)
     def ask(req: AskRequest):
         r = app.state.agent.ask(req.question, req.session_id)
-        return AskResponse(answer=r.answer, refused=r.refused, category=r.category, citations=r.citations,
-                           sources=r.sources, steps=r.steps)
+        return AskResponse(answer=r.answer, refused=r.refused, category=r.category, sql=r.sql, columns=r.columns,
+                           rows=r.rows, truncated=r.truncated, steps=r.steps, queries_run=r.queries_run,
+                           queries_blocked=r.queries_blocked)
 
     return app
 
